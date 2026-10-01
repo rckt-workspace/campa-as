@@ -15,12 +15,14 @@ class PostType(str, Enum):
 @dataclass
 class InstagramPost:
     """Represents an Instagram post"""
-    post_id: str
-    account: str
+    shortcode: str
+    username: str
     caption: str
     post_type: PostType
     published_at: datetime
-    url: str
+    permalink: str
+    thumbnail_url: Optional[str] = None
+    is_video: bool = False
     media_count: int = 1
 
 
