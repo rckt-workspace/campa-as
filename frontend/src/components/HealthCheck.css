@@ -1,0 +1,40 @@
+.health-check {
+  padding: 20px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background-color: #f9f9f9;
+}
+
+.health-check h2 {
+  margin: 0 0 15px 0;
+  color: #333;
+  font-size: 18px;
+}
+
+.health-check p {
+  margin: 8px 0;
+  font-size: 14px;
+}
+
+.status-loading {
+  color: #ff9800;
+  font-weight: 500;
+}
+
+.status-error {
+  color: #f44336;
+  font-weight: 500;
+}
+
+.status-info {
+  padding: 10px;
+  background-color: #e8f5e9;
+  border-left: 4px solid #4caf50;
+  border-radius: 4px;
+}
+
+.status-ok {
+  color: #2e7d32;
+  font-weight: 500;
+  margin: 5px 0;
+}
