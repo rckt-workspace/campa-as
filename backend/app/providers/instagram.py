@@ -54,7 +54,6 @@ class InstaloaderInstagramProvider(InstagramProvider):
             self.instaloader = instaloader
             self.loader = instaloader.Instaloader(
                 quiet=True,
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
                 max_connection_attempts=1,
                 fatal_status_codes=[429],
             )
@@ -110,14 +109,30 @@ class InstaloaderInstagramProvider(InstagramProvider):
 
             logger.info(f"Successfully fetched {len(posts)} posts from @{account}")
             return posts
-        except self.instaloader.exceptions.InvalidUserInput:
+
+        # Specific exceptions from Instaloader - ordered from specific to general
+        except self.instaloader.exceptions.TooManyRequestsException:
+            raise TooManyRequestsException("Instagram rate limit reached (HTTP 429). Please try again later.")
+        except self.instaloader.exceptions.AbortDownloadException as e:
+            error_msg = str(e)
+            if "429" in error_msg or "Too Many Requests" in error_msg:
+                raise TooManyRequestsException("Instagram rate limit reached (HTTP 429). Please try again later.")
+            elif any(keyword in error_msg.lower() for keyword in ["challenge", "checkpoint", "feedback"]):
+                raise InstagramProviderException(f"Instagram requires verification/interaction: {e}")
+            else:
+                raise InstagramProviderException(f"Download aborted: {e}")
+        except self.instaloader.exceptions.ProfileNotExistsException:
             raise ProfileNotFoundException(f"Profile @{account} not found or inaccessible")
         except self.instaloader.exceptions.PrivateProfileNotFollowedException:
             raise PrivateProfileException(f"Cannot access private profile @{account}")
         except self.instaloader.exceptions.LoginRequiredException:
             raise LoginRequiredException(f"Authentication required to access @{account}")
-        except self.instaloader.exceptions.TooManyRequestsException:
-            raise TooManyRequestsException("Instagram rate limit reached (HTTP 429). Please try again later.")
+        except self.instaloader.exceptions.ConnectionException as e:
+            error_msg = str(e)
+            if "429" in error_msg or "Too Many Requests" in error_msg:
+                raise TooManyRequestsException("Instagram rate limit reached (HTTP 429). Please try again later.")
+            else:
+                raise ConnectionException(f"Connection error: {e}")
         except ConnectionError as e:
             raise ConnectionException(f"Network error: {e}")
         except Exception as e:
@@ -129,11 +144,18 @@ class InstaloaderInstagramProvider(InstagramProvider):
         try:
             post = self.instaloader.Post.from_shortcode(self.loader.context, post_id)
             return self._transform_post(post, post.owner_username)
-        except self.instaloader.exceptions.PostNotExistsException:
-            logger.warning(f"Post {post_id} not found")
-            return None
         except self.instaloader.exceptions.TooManyRequestsException:
             raise TooManyRequestsException("Instagram rate limit reached (HTTP 429)")
+        except self.instaloader.exceptions.AbortDownloadException as e:
+            error_msg = str(e)
+            if "429" in error_msg or "Too Many Requests" in error_msg:
+                raise TooManyRequestsException("Instagram rate limit reached (HTTP 429)")
+            logger.warning(f"Failed to fetch post {post_id}: {e}")
+            return None
+        except (self.instaloader.exceptions.QueryReturnedNotFoundException,
+                self.instaloader.exceptions.ProfileNotExistsException):
+            logger.warning(f"Post {post_id} not found")
+            return None
         except Exception as e:
             logger.error(f"Error fetching post {post_id}: {type(e).__name__}: {e}")
             return None

@@ -388,7 +388,126 @@ async def test_load_session_username_mismatch(tmp_path):
         
         provider.loader.load_session_from_file = MagicMock()
         provider.loader.test_login = MagicMock(return_value="differentuser")
-        
+
         provider._load_session()
-        
+
         provider.loader.load_session_from_file.assert_called_once()
+
+
+# Contract tests: Verify real Instaloader exceptions exist
+def test_instaloader_exceptions_exist():
+    """Contract test: Verify all required Instaloader exceptions actually exist"""
+    import instaloader
+
+    # These exceptions MUST exist or our provider will fail
+    required_exceptions = [
+        "TooManyRequestsException",
+        "AbortDownloadException",
+        "ProfileNotExistsException",
+        "PrivateProfileNotFollowedException",
+        "LoginRequiredException",
+        "ConnectionException",
+        "QueryReturnedNotFoundException",
+    ]
+
+    for exc_name in required_exceptions:
+        assert hasattr(instaloader.exceptions, exc_name), \
+            f"Instaloader missing {exc_name}"
+
+
+@pytest.mark.asyncio
+async def test_profile_not_found_exception_mapping():
+    """Test that ProfileNotExistsException maps to our ProfileNotFoundException"""
+    with patch("app.providers.instagram.InstaloaderInstagramProvider.__init__", return_value=None):
+        provider = InstaloaderInstagramProvider()
+        provider.instaloader = MagicMock()
+        provider.loader = MagicMock()
+
+        import instaloader
+        provider.instaloader.Profile = MagicMock()
+        provider.instaloader.exceptions = instaloader.exceptions
+        provider.instaloader.Profile.from_username.side_effect = \
+            instaloader.exceptions.ProfileNotExistsException("Profile not found")
+
+        with pytest.raises(ProfileNotFoundException):
+            await provider.get_posts("nonexistent")
+
+
+@pytest.mark.asyncio
+async def test_private_profile_exception_mapping():
+    """Test that PrivateProfileNotFollowedException maps correctly"""
+    from app.domain.exceptions import PrivateProfileException
+
+    with patch("app.providers.instagram.InstaloaderInstagramProvider.__init__", return_value=None):
+        provider = InstaloaderInstagramProvider()
+        provider.instaloader = MagicMock()
+        provider.loader = MagicMock()
+
+        import instaloader
+        provider.instaloader.Profile = MagicMock()
+        provider.instaloader.exceptions = instaloader.exceptions
+        provider.instaloader.Profile.from_username.side_effect = \
+            instaloader.exceptions.PrivateProfileNotFollowedException("Private profile")
+
+        with pytest.raises(PrivateProfileException):
+            await provider.get_posts("privateuser")
+
+
+@pytest.mark.asyncio
+async def test_too_many_requests_exception_mapping():
+    """Test that TooManyRequestsException maps correctly"""
+    with patch("app.providers.instagram.InstaloaderInstagramProvider.__init__", return_value=None):
+        provider = InstaloaderInstagramProvider()
+        provider.instaloader = MagicMock()
+        provider.loader = MagicMock()
+
+        import instaloader
+        provider.instaloader.Profile = MagicMock()
+        provider.instaloader.exceptions = instaloader.exceptions
+        provider.instaloader.Profile.from_username.side_effect = \
+            instaloader.exceptions.TooManyRequestsException("429")
+
+        with pytest.raises(TooManyRequestsException):
+            await provider.get_posts("anyuser")
+
+
+@pytest.mark.asyncio
+async def test_abort_download_429_exception_mapping():
+    """Test that AbortDownloadException with 429 maps to TooManyRequestsException"""
+    with patch("app.providers.instagram.InstaloaderInstagramProvider.__init__", return_value=None):
+        provider = InstaloaderInstagramProvider()
+        provider.instaloader = MagicMock()
+        provider.loader = MagicMock()
+
+        import instaloader
+        provider.instaloader.Profile = MagicMock()
+        provider.instaloader.exceptions = instaloader.exceptions
+        provider.instaloader.Profile.from_username.side_effect = \
+            instaloader.exceptions.AbortDownloadException("Query to Instagram API responded with 429 Too Many Requests")
+
+        with pytest.raises(TooManyRequestsException) as exc_info:
+            await provider.get_posts("anyuser")
+
+        assert "429" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_abort_download_challenge_exception_mapping():
+    """Test that AbortDownloadException with challenge maps to InstagramProviderException"""
+    from app.domain.exceptions import InstagramProviderException
+
+    with patch("app.providers.instagram.InstaloaderInstagramProvider.__init__", return_value=None):
+        provider = InstaloaderInstagramProvider()
+        provider.instaloader = MagicMock()
+        provider.loader = MagicMock()
+
+        import instaloader
+        provider.instaloader.Profile = MagicMock()
+        provider.instaloader.exceptions = instaloader.exceptions
+        provider.instaloader.Profile.from_username.side_effect = \
+            instaloader.exceptions.AbortDownloadException("challenge_required: Instagram requires verification")
+
+        with pytest.raises(InstagramProviderException) as exc_info:
+            await provider.get_posts("anyuser")
+
+        assert "challenge" in str(exc_info.value).lower() or "verification" in str(exc_info.value).lower()
