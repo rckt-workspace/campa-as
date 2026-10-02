@@ -1,0 +1,71 @@
+{
+  "username": "newbodyclubantienvejecimientoc",
+  "posts": [
+    {
+      "shortcode": "POST001",
+      "username": "newbodyclubantienvejecimientoc",
+      "caption": "Beautiful transformation 💪 #NewBody",
+      "post_type": "photo",
+      "published_at": "2026-09-01T10:00:00",
+      "permalink": "https://www.instagram.com/p/POST001/",
+      "thumbnail_url": "https://example.com/001.jpg",
+      "is_video": false,
+      "media_count": 1
+    },
+    {
+      "shortcode": "POST002",
+      "username": "newbodyclubantienvejecimientoc",
+      "caption": "Fitness journey starts today 🎯",
+      "post_type": "photo",
+      "published_at": "2026-09-02T11:00:00",
+      "permalink": "https://www.instagram.com/p/POST002/",
+      "thumbnail_url": "https://example.com/002.jpg",
+      "is_video": false,
+      "media_count": 1
+    },
+    {
+      "shortcode": "POST003",
+      "username": "newbodyclubantienvejecimientoc",
+      "caption": "Summer is coming! ☀️",
+      "post_type": "photo",
+      "published_at": "2026-09-03T12:00:00",
+      "permalink": "https://www.instagram.com/p/POST003/",
+      "thumbnail_url": "https://example.com/003.jpg",
+      "is_video": false,
+      "media_count": 1
+    },
+    {
+      "shortcode": "POST004",
+      "username": "newbodyclubantienvejecimientoc",
+      "caption": "Join our community 👥",
+      "post_type": "video",
+      "published_at": "2026-09-04T13:00:00",
+      "permalink": "https://www.instagram.com/p/POST004/",
+      "thumbnail_url": "https://example.com/004.jpg",
+      "is_video": true,
+      "media_count": 1
+    },
+    {
+      "shortcode": "POST005",
+      "username": "newbodyclubantienvejecimientoc",
+      "caption": "Only in Medellín branch ✨",
+      "post_type": "photo",
+      "published_at": "2026-09-05T14:00:00",
+      "permalink": "https://www.instagram.com/p/POST005/",
+      "thumbnail_url": "https://example.com/005.jpg",
+      "is_video": false,
+      "media_count": 1
+    },
+    {
+      "shortcode": "POST007",
+      "username": "newbodyclubantienvejecimientoc",
+      "caption": "Barranquilla exclusive content 🎉",
+      "post_type": "photo",
+      "published_at": "2026-09-07T16:00:00",
+      "permalink": "https://www.instagram.com/p/POST007/",
+      "thumbnail_url": "https://example.com/007.jpg",
+      "is_video": false,
+      "media_count": 1
+    }
+  ]
+}

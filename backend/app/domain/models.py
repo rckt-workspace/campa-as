@@ -27,10 +27,21 @@ class InstagramPost:
 
 
 @dataclass
+class PostAuditStatus:
+    """Status of a single post across accounts"""
+    master_post: "InstagramPost"
+    account_status: dict[str, str]  # account -> "found" or "missing"
+    missing_in: list[str]
+
+
+@dataclass
 class AuditResult:
     """Result of comparing posts across accounts"""
     master_account: str
     compared_accounts: list[str]
-    total_posts: int
-    missing_posts: list[dict]
+    posts_status: list[PostAuditStatus]
+    total_master_posts: int
+    found_in_all: int
+    with_missing: int
+    missing_count_by_account: dict[str, int]
     timestamp: datetime
