@@ -45,16 +45,19 @@ def sample_audit_result():
             master_post=posts[0],
             account_status={"account_a": "found", "account_b": "found"},
             missing_in=[],
+            review_in=[],
         ),
         PostAuditStatus(
             master_post=posts[1],
-            account_status={"account_a": "found", "account_b": "missing"},
-            missing_in=["account_b"],
+            account_status={"account_a": "found", "account_b": "review"},
+            missing_in=[],
+            review_in=["account_b"],
         ),
         PostAuditStatus(
             master_post=posts[2],
             account_status={"account_a": "missing", "account_b": "missing"},
             missing_in=["account_a", "account_b"],
+            review_in=[],
         ),
     ]
 
@@ -64,8 +67,10 @@ def sample_audit_result():
         posts_status=posts_status,
         total_master_posts=3,
         found_in_all=1,
-        with_missing=2,
-        missing_count_by_account={"account_a": 1, "account_b": 2},
+        with_missing=1,
+        with_review=1,
+        missing_count_by_account={"account_a": 1, "account_b": 0},
+        review_count_by_account={"account_a": 0, "account_b": 1},
         timestamp=datetime.now(),
     )
 
@@ -79,14 +84,15 @@ def test_excel_export_creates_file(sample_audit_result, tmp_path):
     assert result_path.suffix == ".xlsx"
 
 
-def test_excel_has_both_sheets(sample_audit_result, tmp_path):
-    """Test that Excel has both required sheets"""
+def test_excel_has_all_sheets(sample_audit_result, tmp_path):
+    """Test that Excel has all required sheets"""
     exporter = ExcelExporter()
     result_path = exporter.export(sample_audit_result, str(tmp_path))
 
     wb = load_workbook(result_path)
     assert "1_ESCANEO" in wb.sheetnames
     assert "2_FALTANTES" in wb.sheetnames
+    assert "3_REVISAR" in wb.sheetnames
 
 
 def test_escaneo_sheet_has_correct_rows(sample_audit_result, tmp_path):
@@ -109,8 +115,20 @@ def test_faltantes_sheet_has_only_missing(sample_audit_result, tmp_path):
     wb = load_workbook(result_path)
     ws = wb["2_FALTANTES"]
 
-    # Header + 2 posts (POST002 and POST003 have missing accounts)
-    assert ws.max_row == 3
+    # Header + 1 post (POST003 has missing accounts)
+    assert ws.max_row == 2
+
+
+def test_revisar_sheet_has_only_review(sample_audit_result, tmp_path):
+    """Test that REVISAR sheet has only posts with review accounts"""
+    exporter = ExcelExporter()
+    result_path = exporter.export(sample_audit_result, str(tmp_path))
+
+    wb = load_workbook(result_path)
+    ws = wb["3_REVISAR"]
+
+    # Header + 1 post (POST002 has review accounts)
+    assert ws.max_row == 2
 
 
 def test_excel_preserves_unicode(sample_audit_result, tmp_path):
@@ -165,21 +183,24 @@ def test_excel_headers_are_bold(sample_audit_result, tmp_path):
 
 
 def test_missing_accounts_in_faltantes_column(sample_audit_result, tmp_path):
-    """Test that FALTA EN column shows missing accounts"""
+    """Test that FALTA EN and REVISAR EN columns show correct accounts"""
     exporter = ExcelExporter()
     result_path = exporter.export(sample_audit_result, str(tmp_path))
 
     wb = load_workbook(result_path)
     ws = wb["1_ESCANEO"]
 
-    # Find FALTA EN column (last column)
-    falta_col = ws.max_column
+    # Find FALTA EN column (second to last column, before REVISAR EN)
+    falta_col = ws.max_column - 1
+    revisar_col = ws.max_column
 
-    # Check POST002 row (should have "account_b")
+    # Check POST002 row (should have "account_b" in REVISAR EN, nothing in FALTA EN)
     falta_en_post2 = ws.cell(row=3, column=falta_col).value
-    assert "account_b" in falta_en_post2
+    revisar_en_post2 = ws.cell(row=3, column=revisar_col).value
+    assert (falta_en_post2 is None or falta_en_post2 == "")
+    assert revisar_en_post2 is not None and "account_b" in revisar_en_post2
 
-    # Check POST003 row (should have both accounts)
+    # Check POST003 row (should have both accounts in FALTA EN)
     falta_en_post3 = ws.cell(row=4, column=falta_col).value
-    assert "account_a" in falta_en_post3
+    assert falta_en_post3 is not None and "account_a" in falta_en_post3
     assert "account_b" in falta_en_post3

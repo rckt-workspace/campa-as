@@ -24,6 +24,7 @@ class ExcelExporter:
         # Create sheets
         self._create_escaneo_sheet(workbook, audit_result)
         self._create_faltantes_sheet(workbook, audit_result)
+        self._create_revisar_sheet(workbook, audit_result)
 
         workbook.save(file_path)
         return file_path
@@ -36,7 +37,7 @@ class ExcelExporter:
         headers = ["FECHA ORIGINAL", "LINK COLOMBIA", "CAPTION", "TIPO"]
         for account in audit_result.compared_accounts:
             headers.append(account.upper())
-        headers.append("FALTA EN")
+        headers.extend(["FALTA EN", "REVISAR EN"])
 
         ws.append(headers)
 
@@ -59,11 +60,18 @@ class ExcelExporter:
                 master.post_type.value,
             ]
 
+            # Add status for each account (ESTÁ, REVISAR, FALTA)
             for account in audit_result.compared_accounts:
                 status = post_status.account_status.get(account, "missing")
-                row.append("SI" if status == "found" else "NO")
+                if status == "found":
+                    row.append("ESTÁ")
+                elif status == "review":
+                    row.append("REVISAR")
+                else:
+                    row.append("FALTA")
 
             row.append(", ".join(post_status.missing_in) if post_status.missing_in else "")
+            row.append(", ".join(post_status.review_in) if post_status.review_in else "")
 
             ws.append(row)
 
@@ -74,7 +82,7 @@ class ExcelExporter:
         ws.column_dimensions["D"].width = 12
 
         for account in audit_result.compared_accounts:
-            ws.column_dimensions[get_column_letter(len(headers) - 1)].width = 15
+            ws.column_dimensions[get_column_letter(len(headers) - 2)].width = 15
 
         # Wrap text for caption column
         for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=3, max_col=3):
@@ -123,6 +131,64 @@ class ExcelExporter:
                 master.caption,
                 master.post_type.value,
                 ", ".join(post_status.missing_in),
+            ]
+
+            ws.append(row)
+
+        # Format columns
+        ws.column_dimensions["A"].width = 12
+        ws.column_dimensions["B"].width = 30
+        ws.column_dimensions["C"].width = 40
+        ws.column_dimensions["D"].width = 12
+        ws.column_dimensions["E"].width = 30
+
+        # Wrap text for caption column
+        for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=3, max_col=3):
+            for cell in row:
+                cell.alignment = Alignment(wrap_text=True, vertical="top")
+
+        # Convert URLs to hyperlinks
+        for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=2, max_col=2):
+            for cell in row:
+                if cell.value and isinstance(cell.value, str) and cell.value.startswith("http"):
+                    cell.hyperlink = cell.value
+                    cell.font = Font(color="0563C1", underline="single")
+
+        # Freeze panes
+        ws.freeze_panes = "A2"
+
+        # Auto filter
+        ws.auto_filter.ref = f"A1:E1"
+
+    def _create_revisar_sheet(self, workbook: Workbook, audit_result: AuditResult) -> None:
+        """Create REVISAR sheet with only posts requiring review"""
+        ws = workbook.create_sheet("3_REVISAR")
+
+        # Headers
+        headers = ["FECHA", "LINK COLOMBIA", "CAPTION", "TIPO", "REVISAR EN"]
+        ws.append(headers)
+
+        # Format headers
+        header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
+        header_font = Font(bold=True, color="FFFFFF")
+
+        for cell in ws[1]:
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+        # Add only posts with review accounts
+        for post_status in audit_result.posts_status:
+            if not post_status.review_in:
+                continue
+
+            master = post_status.master_post
+            row = [
+                master.published_at.strftime("%Y-%m-%d"),
+                master.permalink,
+                master.caption,
+                master.post_type.value,
+                ", ".join(post_status.review_in),
             ]
 
             ws.append(row)

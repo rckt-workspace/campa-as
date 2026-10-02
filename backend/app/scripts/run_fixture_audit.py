@@ -75,10 +75,16 @@ def main():
     print(f"  Master posts: {result.total_master_posts}")
     print(f"  Found everywhere: {result.found_in_all}")
     print(f"  With missing accounts: {result.with_missing}")
+    print(f"  With review accounts: {result.with_review}")
     print()
 
     print("MISSING BY ACCOUNT:")
     for account, count in result.missing_count_by_account.items():
+        print(f"  {account}: {count}")
+    print()
+
+    print("REVIEW BY ACCOUNT:")
+    for account, count in result.review_count_by_account.items():
         print(f"  {account}: {count}")
     print()
 
@@ -94,8 +100,15 @@ def main():
         if post_status.missing_in:
             print(f"  {i}. {post_status.master_post.shortcode} - Missing in: {', '.join(post_status.missing_in)}")
 
+    # Print summary of review posts
+    print("\nPOSTS WITH REVIEW ACCOUNTS:")
+    for i, post_status in enumerate(result.posts_status, 1):
+        if post_status.review_in:
+            print(f"  {i}. {post_status.master_post.shortcode} - Requires review in: {', '.join(post_status.review_in)}")
+
     print("\n" + "="*80)
     print(f"Audit complete. Results saved to: {excel_path}")
+    print(f"3 sheets created: 1_ESCANEO, 2_FALTANTES, 3_REVISAR")
     print("="*80 + "\n")
 
 

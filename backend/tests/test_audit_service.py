@@ -175,8 +175,12 @@ def test_exact_content_matcher():
         is_video=False,
     )
 
-    assert matcher.is_same_content(post1, post2) is True
-    assert matcher.is_same_content(post1, post3) is False
+    from app.domain.models import MatchStatus
+    result1 = matcher.match(post1, post2)
+    assert result1.status == MatchStatus.FOUND
+
+    result2 = matcher.match(post1, post3)
+    assert result2.status == MatchStatus.MISSING
 
 
 def test_audit_preserves_unicode(sample_posts):
