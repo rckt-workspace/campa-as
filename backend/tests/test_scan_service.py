@@ -1,15 +1,17 @@
 """Tests for ScanService and MediaCache"""
 import pytest
 import asyncio
+import httpx
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.config import AccountConfig, ScanConfig
 from app.domain.models import InstagramPost, PostType
 from app.providers.instagram import InstagramProvider, MockInstagramProvider
 from app.services.scan_service import ScanService, ScanResult
 from app.cache.media_cache import MediaCache
+from app.providers.browser_instagram import BrowserInstagramProvider
 
 
 @pytest.fixture
@@ -69,9 +71,10 @@ class TestMediaCache:
         path = media_cache._get_cache_path("testuser", "ABC123")
         assert path.name == "testuser_ABC123.jpg"
 
-    def test_none_thumbnail_url_returns_none(self, media_cache):
+    @pytest.mark.asyncio
+    async def test_none_thumbnail_url_returns_none(self, media_cache):
         """None thumbnail URL returns None without errors"""
-        result = media_cache.get_local_thumbnail("user", "code", None)
+        result = await media_cache.get_local_thumbnail("user", "code", None)
         assert result is None
 
     def test_cache_size_empty(self, media_cache):
@@ -98,6 +101,195 @@ class TestMediaCache:
 
         assert count == 2
         assert media_cache.cache_size() == 0
+
+    @pytest.mark.asyncio
+    async def test_thumbnail_url_html_unescape(self):
+        """BrowserInstagramProvider extracts og:image and unescapes HTML entities"""
+        page_content = '<meta property="og:image" content="https://cdn.test/image.jpg?a=1&amp;b=2">'
+        url = BrowserInstagramProvider._extract_thumbnail_url(page_content)
+        assert url == "https://cdn.test/image.jpg?a=1&b=2"
+        assert "&amp;" not in url
+
+    @pytest.mark.asyncio
+    async def test_media_cache_unescapes_url(self, media_cache, tmp_path):
+        """MediaCache unescapes URLs before HTTP request"""
+        captured_urls = []
+
+        def mock_get(*args, **kwargs):
+            url = kwargs.get('url') or (args[1] if len(args) > 1 else None)
+            captured_urls.append(url)
+            response = MagicMock()
+            response.status_code = 200
+            response.headers = {"content-type": "image/jpeg"}
+            response.content = b"fake-jpeg"
+            return response
+
+        with patch("httpx.Client.get", mock_get):
+            result = await media_cache.get_local_thumbnail(
+                "user", "code",
+                "https://cdn.test/image.jpg?a=1&amp;b=2"
+            )
+
+        assert captured_urls
+        assert "&amp;" not in captured_urls[0]
+        assert captured_urls[0] == "https://cdn.test/image.jpg?a=1&b=2"
+
+    @pytest.mark.asyncio
+    async def test_http_403_uses_media_fetcher(self, media_cache, tmp_path):
+        """HTTP 403 triggers media_fetcher fallback"""
+        async def mock_fetcher(url):
+            return b"fallback-image"
+
+        media_cache.media_fetcher = mock_fetcher
+
+        def mock_get(*args, **kwargs):
+            response = MagicMock()
+            response.status_code = 403
+            return response
+
+        with patch("httpx.Client.get", mock_get):
+            result = await media_cache.get_local_thumbnail("user", "code", "https://test.com/img.jpg")
+
+        assert result is not None
+        assert result.read_bytes() == b"fallback-image"
+
+    @pytest.mark.asyncio
+    async def test_non_image_http_response_uses_fallback(self, media_cache):
+        """HTTP 200 with non-image content uses media_fetcher"""
+        async def mock_fetcher(url):
+            return b"real-image"
+
+        media_cache.media_fetcher = mock_fetcher
+
+        def mock_get(*args, **kwargs):
+            response = MagicMock()
+            response.status_code = 200
+            response.headers = {"content-type": "text/html"}
+            response.content = b"<html>Error</html>"
+            return response
+
+        with patch("httpx.Client.get", mock_get):
+            result = await media_cache.get_local_thumbnail("user", "code", "https://test.com/img.jpg")
+
+        assert result is not None
+        assert result.read_bytes() == b"real-image"
+
+    @pytest.mark.asyncio
+    async def test_media_fetcher_failure_returns_none(self, media_cache):
+        """Media fetcher returning None results in None"""
+        async def mock_fetcher(url):
+            return None
+
+        media_cache.media_fetcher = mock_fetcher
+
+        def mock_get(*args, **kwargs):
+            response = MagicMock()
+            response.status_code = 403
+            return response
+
+        with patch("httpx.Client.get", mock_get):
+            result = await media_cache.get_local_thumbnail("user", "code", "https://test.com/img.jpg")
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_fetch_media_returns_bytes(self):
+        """fetch_media returns bytes on success"""
+        provider = BrowserInstagramProvider()
+        provider.context = MagicMock()
+
+        response = MagicMock()
+        response.ok = True
+        response.headers = {"content-type": "image/jpeg"}
+        response.body = AsyncMock(return_value=b"image-bytes")
+
+        provider.context.request.get = AsyncMock(return_value=response)
+
+        result = await provider.fetch_media("https://test.com/image.jpg")
+        assert isinstance(result, bytes)
+        assert result == b"image-bytes"
+
+    @pytest.mark.asyncio
+    async def test_fetch_media_rejects_non_image(self):
+        """fetch_media rejects non-image content"""
+        provider = BrowserInstagramProvider()
+        provider.context = MagicMock()
+
+        response = MagicMock()
+        response.ok = True
+        response.headers = {"content-type": "text/html"}
+        response.body = AsyncMock(return_value=b"<html>")
+
+        provider.context.request.get = AsyncMock(return_value=response)
+
+        result = await provider.fetch_media("https://test.com/image.jpg")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_browser_close_is_idempotent(self):
+        """Browser close can be called multiple times safely"""
+        provider = BrowserInstagramProvider()
+        context_mock = AsyncMock()
+        browser_mock = AsyncMock()
+        playwright_mock = AsyncMock()
+
+        provider.context = context_mock
+        provider.browser = browser_mock
+        provider.playwright = playwright_mock
+
+        await provider.close()
+        await provider.close()
+
+        context_mock.close.assert_awaited()
+        browser_mock.close.assert_awaited()
+        playwright_mock.stop.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_browser_close_stops_playwright(self):
+        """Browser close stops playwright instance"""
+        provider = BrowserInstagramProvider()
+        context_mock = AsyncMock()
+        browser_mock = AsyncMock()
+        playwright_mock = AsyncMock()
+
+        provider.context = context_mock
+        provider.browser = browser_mock
+        provider.playwright = playwright_mock
+
+        await provider.close()
+
+        playwright_mock.stop.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_browser_references_none_after_close(self):
+        """All browser references are None after close"""
+        provider = BrowserInstagramProvider()
+        provider.context = AsyncMock()
+        provider.browser = AsyncMock()
+        provider.playwright = AsyncMock()
+
+        await provider.close()
+
+        assert provider.context is None
+        assert provider.browser is None
+        assert provider.playwright is None
+
+    @pytest.mark.asyncio
+    async def test_http_timeout_uses_media_fetcher(self, media_cache):
+        """HTTP timeout triggers media_fetcher fallback"""
+        async def mock_fetcher(url):
+            return b"fallback-image"
+
+        media_cache.media_fetcher = mock_fetcher
+
+        def mock_get(*args, **kwargs):
+            raise httpx.TimeoutException("timeout")
+
+        with patch("httpx.Client.get", mock_get):
+            result = await media_cache.get_local_thumbnail("user", "code", "https://test.com/img.jpg")
+
+        assert result is not None
+        assert result.read_bytes() == b"fallback-image"
 
 
 class TestScanConfig:

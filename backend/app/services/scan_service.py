@@ -138,11 +138,15 @@ class ScanService:
 
     async def _prepare_posts(self, posts: list[InstagramPost]) -> list[InstagramPost]:
         """Prepare posts by downloading thumbnails locally"""
+        # Set up media_cache fallback if provider has fetch_media
+        if hasattr(self.provider, 'fetch_media'):
+            self.media_cache.media_fetcher = self.provider.fetch_media
+
         prepared = []
 
         for post in posts:
             # Download thumbnail to local cache
-            local_path = self.media_cache.get_local_thumbnail(
+            local_path = await self.media_cache.get_local_thumbnail(
                 username=post.username,
                 shortcode=post.shortcode,
                 thumbnail_url=post.thumbnail_url,

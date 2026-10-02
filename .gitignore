@@ -54,6 +54,13 @@ data/
 *.log
 *.json.log
 
+# Instaloader cache and sessions
+.instaloader/
+*.session
+*.session-backup
+backend/data/sessions/*
+!backend/data/sessions/.gitkeep
+
 # OS
 .DS_Store
 Thumbs.db

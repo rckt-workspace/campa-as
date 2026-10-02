@@ -1,20 +1,24 @@
 """Central configuration for Instagram accounts and scanning"""
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from app.utils import normalize_instagram_username
 
 
 @dataclass
 class AccountConfig:
     """Configuration for Instagram accounts to scan"""
     master_account: str = "newbodycol"
-    comparison_accounts: list[str] = None
+    comparison_accounts: list[str] = field(default_factory=lambda: [
+        "newbodyclubmedellin",
+        "newbodyclubantienvejecimientoc",
+        "newbodybaq",
+    ])
 
     def __post_init__(self):
-        if self.comparison_accounts is None:
-            self.comparison_accounts = [
-                "newbodyclubmedellin",
-                "newbodyclubantienvejecimientoc",
-                "newbodybaq",
-            ]
+        # Normalize all usernames
+        self.master_account = normalize_instagram_username(self.master_account)
+        self.comparison_accounts = [
+            normalize_instagram_username(acc) for acc in self.comparison_accounts
+        ]
 
     def all_accounts(self) -> list[str]:
         """Return all accounts including master"""

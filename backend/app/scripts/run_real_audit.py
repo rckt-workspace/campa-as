@@ -6,6 +6,7 @@ from pathlib import Path
 
 from app.config import AccountConfig, ScanConfig
 from app.providers.instagram import InstaloaderInstagramProvider
+from app.providers.browser_instagram import BrowserInstagramProvider
 from app.services.scan_service import ScanService
 from app.domain.exceptions import (
     InstagramProviderException,
@@ -26,16 +27,41 @@ async def main():
     """Run real Instagram audit"""
     parser = argparse.ArgumentParser(description="Run real Instagram content audit")
     parser.add_argument(
+        "--master",
+        type=str,
+        default="newbodycol",
+        help="Master Instagram account (default: newbodycol)",
+    )
+    parser.add_argument(
+        "--compare",
+        type=str,
+        action="append",
+        dest="comparison_accounts",
+        help="Regional account to compare (can use multiple times)",
+    )
+    parser.add_argument(
         "--limit",
         type=int,
-        default=20,
-        help="Master account post limit (default: 20)",
+        default=5,
+        help="Master account post limit (default: 5)",
+    )
+    parser.add_argument(
+        "--provider",
+        type=str,
+        default="browser",
+        choices=["browser", "instaloader"],
+        help="Provider to use: browser (Playwright, default) or instaloader",
+    )
+    parser.add_argument(
+        "--headed",
+        action="store_true",
+        help="Run Playwright in headed mode (visible browser) for debugging",
     )
     parser.add_argument(
         "--session-username",
         type=str,
         default=None,
-        help="Instagram username for authenticated session",
+        help="Instagram username for authenticated session (Instaloader only)",
     )
     parser.add_argument(
         "--session-file",
@@ -50,25 +76,42 @@ async def main():
     print("NEWBODY CONTENT AUDIT - REAL INSTAGRAM")
     print("="*80 + "\n")
 
+    provider = None
     try:
         # Initialize provider
-        logger.info("Initializing Instagram provider")
+        logger.info(f"Initializing {args.provider} provider")
 
-        if args.session_file:
-            logger.info(f"Using authenticated session: {args.session_username}")
-            provider = InstaloaderInstagramProvider(
-                session_username=args.session_username,
-                session_file=Path(args.session_file),
-            )
+        if args.provider == "browser":
+            provider = BrowserInstagramProvider(headless=not args.headed)
+            logger.info("Using public Instagram browsing via Playwright")
+        elif args.provider == "instaloader":
+            if args.session_file:
+                logger.info(f"Using authenticated session: {args.session_username}")
+                provider = InstaloaderInstagramProvider(
+                    session_username=args.session_username,
+                    session_file=Path(args.session_file),
+                )
+            else:
+                logger.info("Using anonymous Instaloader access")
+                provider = InstaloaderInstagramProvider()
         else:
-            logger.info("Using anonymous access")
-            provider = InstaloaderInstagramProvider()
+            raise ValueError(f"Unknown provider: {args.provider}")
 
-        # Configure scan
-        account_config = AccountConfig()
+        # Configure scan with CLI arguments
+        if args.comparison_accounts is None:
+            # Use defaults if not specified
+            comparison_accounts = None
+        else:
+            comparison_accounts = args.comparison_accounts
+
+        account_config = AccountConfig(
+            master_account=args.master,
+            comparison_accounts=comparison_accounts,
+        )
         scan_config = ScanConfig(master_limit=args.limit)
 
         print(f"Configuration:")
+        print(f"  Provider: {args.provider}")
         print(f"  Master account: {account_config.master_account}")
         print(f"  Regional accounts: {', '.join(account_config.comparison_accounts)}")
         print(f"  Master limit: {args.limit}")
@@ -111,6 +154,13 @@ async def main():
         logger.error(f"Unexpected error: {type(e).__name__}: {e}", exc_info=True)
         print(f"\n❌ Unexpected error: {e}\n")
         return 1
+    finally:
+        # Close browser if using Playwright
+        if provider and isinstance(provider, BrowserInstagramProvider):
+            try:
+                await provider.close()
+            except Exception as e:
+                logger.warning(f"Error closing browser: {e}")
 
     return 0
 
