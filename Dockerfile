@@ -12,7 +12,6 @@ RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 # Copy frontend source
 COPY frontend/src ./src
 COPY frontend/index.html frontend/tsconfig.json frontend/vite.config.ts ./
-COPY frontend/public ./public
 
 # Type check and build
 RUN npm run type-check
