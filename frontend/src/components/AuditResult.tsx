@@ -21,7 +21,25 @@ interface PostResult {
 }
 
 interface AuditResultProps {
-  result: any
+  result: {
+    scan_id: string
+    status: string
+    master_account: string
+    master_posts: number
+    regional_posts: { [key: string]: number }
+    found_everywhere: number
+    with_missing: number
+    with_review: number
+    missing_by_account: { [key: string]: number }
+    review_by_account: { [key: string]: number }
+    export_url: string
+    posts: PostResult[]
+    scan_mode?: string
+    scan_period?: string
+    warnings?: string[] | null
+    unavailable_accounts?: string[]
+    extraction_summary?: { [key: string]: any }
+  }
   onNewScan: () => void
 }
 
@@ -66,7 +84,7 @@ export default function AuditResult({ result, onNewScan }: AuditResultProps) {
     <div className="audit-result">
       <div className="result-header">
         <h2>{hasWarnings ? '⚠ Auditoría Parcial' : 'Auditoría Completada'}</h2>
-        {hasWarnings && (
+        {hasWarnings && result.warnings && (
           <div className="warning-box">
             <p><strong>Aviso:</strong> Instagram limitó el acceso a algunos datos durante el escaneo.</p>
             {result.warnings.map((warning: string, idx: number) => (
@@ -113,11 +131,16 @@ export default function AuditResult({ result, onNewScan }: AuditResultProps) {
             "newbodybaq": "Barranquilla"
           }
           const displayLabel = accountLabels[account] || account
+          const isUnavailable = result.unavailable_accounts?.includes(account)
+
           return (
             <div key={account} className="account-item">
               <strong>{displayLabel}</strong>
               <span className="account-stats">
-                Faltantes: {missing} · Revisar: {result.review_by_account[account] || 0}
+                {isUnavailable
+                  ? <span style={{ color: '#f59e0b' }}>Sin cobertura · No concluyente</span>
+                  : <>Faltantes: {missing} · Revisar: {result.review_by_account[account] || 0}</>
+                }
               </span>
             </div>
           )

@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field, field_validator, model_validator
 from datetime import datetime, date
 from typing import Literal
+from urllib.parse import urlparse
 from app.utils import normalize_instagram_username
 
 
@@ -160,4 +161,91 @@ class ManualLinkResponse(BaseModel):
     errors: list[str] = Field(
         default_factory=list,
         description="URLs that could not be processed"
+    )
+
+
+class ManualAuditAccountRequest(BaseModel):
+    """Account links for manual audit"""
+    username: str = Field(..., min_length=1, max_length=30)
+    label: str = Field(..., max_length=50)
+    links: list[str] = Field(..., min_length=0, max_length=500)
+
+    @field_validator("username")
+    @classmethod
+    def validate_username(cls, v):
+        return normalize_instagram_username(v)
+
+    @field_validator("links")
+    @classmethod
+    def validate_links_format(cls, v):
+        """Validate and normalize Instagram URLs"""
+        validated = []
+        for link in v:
+            link = link.strip()
+            if not link:
+                continue
+
+            try:
+                parsed = urlparse(link)
+            except Exception:
+                continue
+
+            # Must be HTTPS
+            if parsed.scheme != "https":
+                continue
+
+            # Hostname must be exactly instagram.com or www.instagram.com
+            hostname = parsed.hostname
+            if hostname not in ("instagram.com", "www.instagram.com"):
+                continue
+
+            # Path must contain /p/ or /reel/
+            path = parsed.path
+            if "/p/" not in path and "/reel/" not in path:
+                continue
+
+            validated.append(link)
+        return validated
+
+
+class ManualAuditRequest(BaseModel):
+    """Request model for manual links audit"""
+    master: ManualAuditAccountRequest
+    targets: list[ManualAuditAccountRequest] = Field(..., min_length=1, max_length=10)
+
+    @field_validator("targets")
+    @classmethod
+    def validate_targets_not_master(cls, v, info):
+        master = info.data.get("master")
+        if master:
+            target_usernames = {t.username for t in v}
+            if master.username in target_usernames:
+                raise ValueError("Master account cannot be in targets")
+        return v
+
+
+class ManualAuditResponse(BaseModel):
+    """Response for manual audit"""
+    scan_id: str
+    status: str
+    master_account: str
+    master_posts: int
+    regional_posts: dict[str, int]
+    found_everywhere: int
+    with_missing: int
+    with_review: int
+    missing_by_account: dict[str, int]
+    review_by_account: dict[str, int]
+    export_url: str
+    posts: list[PostResultResponse] = Field(default_factory=list)
+    scan_mode: str = "manual"
+    scan_period: str = "Auditoría por enlaces importados"
+    warnings: list[str] = Field(default_factory=list)
+    unavailable_accounts: list[str] = Field(
+        default_factory=list,
+        description="Accounts with zero posts extracted (no coverage)"
+    )
+    extraction_summary: dict = Field(
+        default_factory=dict,
+        description="Per-account extraction stats: links_received, links_valid, posts_extracted, links_failed"
     )

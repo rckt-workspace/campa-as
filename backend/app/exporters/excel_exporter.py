@@ -38,9 +38,15 @@ class ExcelExporter:
         audit_result: AuditResult,
         output_dir: str = "data/exports",
         account_labels: dict = None,
+        scan_mode: str = None,
+        extraction_summary: dict = None,
+        unavailable_accounts: list = None,
     ) -> Path:
         """Export audit result to Excel file"""
         self.account_labels = account_labels or {}
+        self.scan_mode = scan_mode
+        self.extraction_summary = extraction_summary or {}
+        self.unavailable_accounts = unavailable_accounts or []
 
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
@@ -66,6 +72,36 @@ class ExcelExporter:
     def _create_escaneo_sheet(self, workbook: Workbook, audit_result: AuditResult) -> None:
         """Create ESCANEO sheet with all posts and account status grid"""
         ws = workbook.create_sheet("1_ESCANEO", 0)
+
+        # Add metadata for manual audit mode
+        current_row = 1
+        if self.scan_mode == "manual":
+            ws.append(["Método", "Importación manual de enlaces"])
+            current_row += 1
+            ws.append([])  # blank line
+            current_row += 1
+
+            # Account extraction summary
+            ws.append(["Cuenta", "Links suministrados", "Links válidos", "Publicaciones procesadas", "Links con error", "Cobertura"])
+            current_row += 1
+
+            for account in audit_result.compared_accounts + [audit_result.master_account]:
+                label = self._get_account_label(account)
+                stats = self.extraction_summary.get(account, {})
+                coverage = "No concluyente" if account in self.unavailable_accounts else "Procesada"
+
+                ws.append([
+                    label,
+                    stats.get("links_received", 0),
+                    stats.get("links_valid", 0),
+                    stats.get("posts_extracted", 0),
+                    stats.get("links_failed", 0),
+                    coverage,
+                ])
+                current_row += 1
+
+            ws.append([])  # blank line
+            current_row += 1
 
         headers = ["FECHA", "PUBLICACIÓN", "CAPTION", "TIPO"]
 
