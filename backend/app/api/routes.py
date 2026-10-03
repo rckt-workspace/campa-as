@@ -5,7 +5,10 @@ from uuid import uuid4
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from starlette.responses import FileResponse
-from app.api.schemas import HealthResponse, ScanRequest, ScanResponse, ErrorResponse, PostResultResponse, AccountMatchResponse
+from app.api.schemas import (
+    HealthResponse, ScanRequest, ScanResponse, ErrorResponse,
+    PostResultResponse, AccountMatchResponse, ManualLinkRequest, ManualLinkResponse
+)
 from app.config import AccountConfig, ScanConfig
 from app.providers.browser_instagram import BrowserInstagramProvider
 from app.services.scan_service import ScanService
@@ -169,3 +172,54 @@ async def download_export(scan_id: str):
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         filename=filename,
     )
+
+
+@router.post("/manual-links", response_model=ManualLinkResponse, status_code=200)
+async def extract_posts_from_links(request: ManualLinkRequest):
+    """Extract Instagram posts from manual URLs"""
+    provider = None
+    try:
+        headless = os.getenv("BROWSER_HEADLESS", "true").lower() == "true"
+        provider = BrowserInstagramProvider(headless=headless)
+
+        posts = []
+        errors = []
+
+        for link in request.links:
+            try:
+                post = await provider.get_post_by_permalink(link)
+                if post:
+                    posts.append({
+                        "shortcode": post.shortcode,
+                        "permalink": post.permalink,
+                        "published_at": post.published_at.isoformat() if post.published_at else None,
+                        "caption": clean_caption(post.caption)[:200] if post.caption else "",
+                        "type": post.post_type.value,
+                        "username": post.username,
+                    })
+                else:
+                    errors.append(f"Could not extract: {link}")
+            except Exception as e:
+                logger.warning(f"Error processing link {link}: {e}")
+                errors.append(f"Error: {link}")
+
+        return ManualLinkResponse(
+            status="completed",
+            links_processed=len(request.links),
+            posts_found=len(posts),
+            posts=posts,
+            errors=errors,
+        )
+
+    except Exception as e:
+        logger.error(f"Manual links error: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Error processing manual links",
+        )
+    finally:
+        if provider:
+            try:
+                await provider.close()
+            except Exception as e:
+                logger.warning(f"Error closing provider: {e}")

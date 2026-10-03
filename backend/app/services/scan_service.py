@@ -283,6 +283,20 @@ class ScanService:
                     to_date=to_date,
                 )
 
+                # Short-circuit: if first batch is empty, don't retry
+                if batch_index == 0 and len(batch_posts) == 0:
+                    logger.warning(
+                        f"@{account} first batch returned zero posts. "
+                        "Skipping further retry attempts."
+                    )
+                    progress.batches_attempted = 1
+                    progress.completed = False
+                    progress.stop_reason = "zero_posts_initial"
+                    progress.warnings.append(
+                        "No fue posible descubrir publicaciones públicas desde este entorno."
+                    )
+                    break
+
                 # Identify new posts by shortcode
                 new_posts = [
                     p for p in batch_posts

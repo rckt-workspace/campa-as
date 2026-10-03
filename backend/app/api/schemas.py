@@ -129,3 +129,35 @@ class ScanResponse(BaseModel):
     scan_period: str = Field(default="", description="Human readable period: '01/01/2025 - 02/10/2026' or 'Últimas 20 publicaciones'")
     warnings: list[str] = Field(default_factory=list, description="Warnings about scan completeness or data quality")
     coverage_by_account: dict = Field(default_factory=dict, description="Coverage details per account (date mode only)")
+
+
+class ManualLinkRequest(BaseModel):
+    """Request model for extracting posts from manual URLs"""
+    links: list[str] = Field(..., min_length=1, max_length=100, description="Array of Instagram post URLs")
+
+    @field_validator("links")
+    @classmethod
+    def validate_links(cls, v):
+        """Validate Instagram post URL format"""
+        valid_links = []
+        for link in v:
+            if "/p/" in link or "/reel/" in link:
+                valid_links.append(link)
+        if not valid_links:
+            raise ValueError("No valid Instagram post URLs found (must contain /p/ or /reel/)")
+        return valid_links
+
+
+class ManualLinkResponse(BaseModel):
+    """Response for manual link extraction"""
+    status: str
+    links_processed: int
+    posts_found: int
+    posts: list[dict] = Field(
+        default_factory=list,
+        description="Extracted posts with shortcode, caption, published_at, type"
+    )
+    errors: list[str] = Field(
+        default_factory=list,
+        description="URLs that could not be processed"
+    )

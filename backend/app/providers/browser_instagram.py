@@ -49,16 +49,10 @@ class BrowserInstagramProvider:
         if self.browser is None:
             self.playwright = await self.async_playwright().start()
             self.browser = await self.playwright.chromium.launch(
-                headless=self.headless,
-                args=["--disable-blink-features=AutomationControlled"],
+                headless=self.headless
             )
             self.context = await self.browser.new_context(
-                viewport=self.viewport,
-                user_agent=(
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/120.0.0.0 Safari/537.36"
-                ),
+                viewport=self.viewport
             )
 
     async def reset_public_context(self):
@@ -163,15 +157,70 @@ class BrowserInstagramProvider:
 
             page = await self.context.new_page()
             try:
-                # Navigate to profile
+                # Navigate to profile and capture real status
                 profile_url = f"https://www.instagram.com/{account}/"
                 logger.info(f"Navigating to {profile_url}")
 
+                navigation_status = None
                 try:
-                    await page.goto(profile_url, wait_until="domcontentloaded", timeout=10000)
+                    response = await page.goto(
+                        profile_url, wait_until="domcontentloaded", timeout=10000
+                    )
+                    navigation_status = response.status if response else None
                 except Exception as e:
                     logger.error(f"Failed to navigate to profile: {e}")
                     raise InstagramProviderException(f"Could not access profile @{account}: {e}")
+
+                # Wait for dynamic content
+                await page.wait_for_timeout(4000)
+
+                # Wait for selectors (gracefully continue if timeout)
+                try:
+                    await page.wait_for_selector(
+                        'a[href*="/p/"], a[href*="/reel/"]',
+                        timeout=5000
+                    )
+                except Exception:
+                    pass
+
+                current_url = page.url
+                page_title = await page.title()
+
+                # Try to detect post links (without failing if not found)
+                post_links_found = 0
+                reel_links_found = 0
+                try:
+                    post_links_found = len(await page.query_selector_all('a[href*="/p/"]'))
+                    reel_links_found = len(await page.query_selector_all('a[href*="/reel/"]'))
+                except Exception:
+                    pass
+
+                # Detect login wall more precisely
+                login_wall_present = False
+                try:
+                    # Check for specific login indicators
+                    is_login_url = "/accounts/login/" in current_url
+
+                    # Look for specific login dialog content
+                    login_text_dialog = await page.query_selector(
+                        '[role="dialog"]:has-text("Log in"), [role="dialog"]:has-text("Iniciar sesión")'
+                    )
+
+                    # Look for login button/link
+                    login_button = await page.query_selector(
+                        'button:has-text("Log in"), a:has-text("Log in"), '
+                        'button:has-text("Iniciar sesión"), a:has-text("Iniciar sesión")'
+                    )
+
+                    login_wall_present = is_login_url or login_text_dialog is not None or login_button is not None
+                except Exception:
+                    pass
+
+                logger.info(
+                    f"IG PROFILE DIAG account={account} status={navigation_status} url={current_url} "
+                    f"title={page_title} post_links={post_links_found} reel_links={reel_links_found} "
+                    f"login_wall={login_wall_present}"
+                )
 
                 # Extract post links based on mode (returns stop_reason, completed)
                 is_date_mode = from_date is not None
@@ -300,6 +349,56 @@ class BrowserInstagramProvider:
 
         except Exception as e:
             logger.warning(f"Could not fetch post {post_id}: {e}")
+            return None
+
+    async def get_post_by_permalink(self, permalink: str) -> Optional[InstagramPost]:
+        """
+        Fetch a single post by Instagram permalink URL.
+
+        Supports:
+        - https://www.instagram.com/p/ABC123/
+        - https://www.instagram.com/reel/XYZ789/
+
+        Args:
+            permalink: Full Instagram post URL
+
+        Returns:
+            InstagramPost if found, None if not accessible
+        """
+        try:
+            await self._ensure_browser()
+            page = await self.context.new_page()
+
+            try:
+                logger.info(f"Fetching post by permalink: {permalink}")
+
+                # Navigate with timeout
+                await page.goto(permalink, wait_until="domcontentloaded", timeout=10000)
+
+                # Wait for dynamic content
+                await page.wait_for_timeout(4000)
+
+                # Extract post
+                post = await self._extract_post_from_page(page, permalink)
+
+                if post:
+                    logger.info(f"Successfully extracted post: {post.shortcode}")
+                    return post
+
+                # Check if blocked
+                is_blocked, reason = await self._check_for_blocks(page, has_posts=False)
+                if is_blocked:
+                    logger.warning(f"Post access blocked ({reason}): {permalink}")
+                    return None
+
+                logger.warning(f"Could not extract post from {permalink}")
+                return None
+
+            finally:
+                await page.close()
+
+        except Exception as e:
+            logger.warning(f"Error fetching post by permalink: {e}")
             return None
 
     async def _check_for_blocks(self, page, has_posts: bool = False) -> tuple[bool, str | None]:
