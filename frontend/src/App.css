@@ -1,0 +1,101 @@
+:root {
+  --primary: #1F4E78;
+  --primary-dark: #1A3A5C;
+  --text: #172033;
+  --text-muted: #667085;
+  --border: #E4E7EC;
+  --bg: #F6F8FB;
+  --white: #FFFFFF;
+  --success: #E8F5E9;
+  --success-dark: #2E7D32;
+  --warning: #FFF3E0;
+  --warning-dark: #E65100;
+  --danger: #FFEBEE;
+  --danger-dark: #C62828;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+}
+
+.app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-header {
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+  color: var(--white);
+  padding: 60px 20px 40px;
+  text-align: center;
+}
+
+.app-header h1 {
+  font-size: 2.5rem;
+  margin-bottom: 10px;
+  font-weight: 700;
+}
+
+.app-header p {
+  font-size: 1.1rem;
+  opacity: 0.95;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.container {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 0 20px;
+  width: 100%;
+}
+
+main {
+  flex: 1;
+  padding: 40px 0;
+}
+
+.app-footer {
+  background: var(--white);
+  border-top: 1px solid var(--border);
+  padding: 20px 0;
+  text-align: center;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.status-ok {
+  color: var(--success-dark);
+  font-weight: 600;
+}
+
+@media (max-width: 768px) {
+  .app-header h1 {
+    font-size: 1.8rem;
+  }
+
+  .app-header p {
+    font-size: 1rem;
+  }
+
+  .container {
+    padding: 0 16px;
+  }
+
+  main {
+    padding: 20px 0;
+  }
+}
