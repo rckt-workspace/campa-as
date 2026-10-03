@@ -1,28 +1,17 @@
 """Excel exporter for Instagram content audit results"""
 from pathlib import Path
 from datetime import datetime
-from html import unescape
-import re
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
 from app.domain.models import AuditResult, PostType
+from app.utils import clean_caption, to_bogota_time
 
 
 def clean_caption_for_export(caption: str) -> str:
-    """Clean caption for Excel export: unescape, remove metadata, preserve emojis"""
-    if not caption:
-        return ""
-
-    caption = unescape(caption)
-
-    pattern = r"^\d+\s+likes?,\s+\d+\s+comments?\s*-\s*\w+\s+(?:on|el)\s+\w+\s+\d+,\s+\d+:\s*"
-    caption = re.sub(pattern, "", caption, flags=re.IGNORECASE)
-
-    caption = caption.strip()
-
-    return caption
+    """Clean caption for Excel export (uses shared utility)"""
+    return clean_caption(caption)
 
 
 def get_post_type_label(post_type: PostType) -> str:
@@ -288,7 +277,7 @@ class ExcelExporter:
 
         for i in range(num_accounts):
             col_letter = get_column_letter(5 + i)
-            ws.column_dimensions[col_letter].width = 18
+            ws.column_dimensions[col_letter].width = 25
 
         ws.column_dimensions[get_column_letter(5 + num_accounts)].width = 25
         ws.column_dimensions[get_column_letter(6 + num_accounts)].width = 25
@@ -322,6 +311,7 @@ class ExcelExporter:
 
             for col_idx, cell in enumerate(row):
                 if col_idx >= status_col_start - 1 and col_idx < status_col_start - 1 + len(accounts):
+                    cell.alignment = Alignment(wrap_text=True, horizontal="center", vertical="center")
                     if cell.value == "ESTÁ":
                         cell.fill = green_fill
                         cell.font = green_font

@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: newbody-content-auditor
+    runtime: docker
+    plan: free
+
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+
+    healthCheckPath: /api/health
+
+    envVars:
+      - key: BROWSER_HEADLESS
+        value: "true"
+      - key: EXPORT_DIR
+        value: "/tmp/newbody-exports"
+      - key: FRONTEND_DIST
+        value: "/app/frontend/dist"
+      - key: CORS_ORIGINS
+        value: "https://newbody-content-auditor.onrender.com"
+      - key: PORT
+        value: "10000"

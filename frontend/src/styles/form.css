@@ -1,0 +1,242 @@
+.audit-form {
+  background: var(--white);
+  border-radius: 14px;
+  padding: 40px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.form-section {
+  margin-bottom: 40px;
+}
+
+.form-section h2 {
+  font-size: 1.3rem;
+  margin-bottom: 20px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.form-group input {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 1rem;
+  transition: all 0.2s;
+}
+
+.form-group input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(31, 78, 120, 0.1);
+}
+
+.help-text {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  margin-top: 6px;
+}
+
+.target-row {
+  display: grid;
+  grid-template-columns: 1fr 2fr 50px;
+  gap: 12px;
+  margin-bottom: 12px;
+  align-items: center;
+}
+
+.target-label,
+.target-username {
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 0.95rem;
+  transition: all 0.2s;
+}
+
+.target-label:focus,
+.target-username:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(31, 78, 120, 0.1);
+}
+
+.btn-remove {
+  padding: 10px;
+  background: var(--danger);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--danger-dark);
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.btn-remove:hover {
+  background: var(--danger-dark);
+  color: var(--white);
+  border-color: var(--danger-dark);
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: var(--white);
+  padding: 14px 32px;
+  border: none;
+  border-radius: 10px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--primary-dark);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(31, 78, 120, 0.2);
+}
+
+.btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-primary.btn-large {
+  width: 100%;
+  justify-content: center;
+  padding: 16px;
+  font-size: 1.1rem;
+}
+
+.btn-secondary {
+  background: var(--white);
+  color: var(--primary);
+  padding: 12px 24px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-secondary:hover {
+  background: var(--bg);
+  border-color: var(--primary);
+}
+
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  border-top-color: var(--white);
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loading-message {
+  text-align: center;
+  margin-top: 16px;
+  color: var(--text-muted);
+}
+
+.error-card {
+  background: var(--danger);
+  color: var(--danger-dark);
+  padding: 16px;
+  border-radius: 10px;
+  margin-bottom: 20px;
+  border-left: 4px solid var(--danger-dark);
+}
+
+.scan-mode-selector {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding: 6px;
+  background: #F2F4F7;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  margin: 16px 0 24px;
+}
+
+.scan-mode-option {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 48px;
+  padding: 12px 18px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 600;
+  color: #344054;
+  background: var(--white);
+  transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+  border: none;
+  user-select: none;
+}
+
+.scan-mode-option input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.scan-mode-option:hover {
+  background: #EAECF0;
+}
+
+.scan-mode-option:has(input:checked) {
+  background: var(--primary);
+  color: var(--white);
+  box-shadow: 0 2px 6px rgba(16, 24, 40, 0.14);
+}
+
+.scan-mode-option:has(input:focus-visible) {
+  outline: 3px solid rgba(31, 78, 120, 0.22);
+  outline-offset: 2px;
+}
+
+@media (max-width: 768px) {
+  .scan-mode-selector {
+    flex-direction: column;
+  }
+
+  .radio-option {
+    flex: none;
+  }
+  .audit-form {
+    padding: 24px;
+  }
+
+  .target-row {
+    grid-template-columns: 1fr;
+  }
+
+  .btn-primary.btn-large {
+    padding: 14px;
+    font-size: 1rem;
+  }
+}

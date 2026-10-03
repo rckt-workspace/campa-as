@@ -1,6 +1,6 @@
 """Audit service for comparing posts across accounts"""
 from datetime import datetime
-from app.domain.models import AuditResult, PostAuditStatus, InstagramPost, MatchStatus
+from app.domain.models import AuditResult, PostAuditStatus, InstagramPost, MatchStatus, AccountMatchDetail
 from app.domain.matcher import ContentMatcher, ExactContentMatcher, PerceptualContentMatcher
 from app.domain.matcher_config import MatcherConfig
 
@@ -28,29 +28,40 @@ class AuditService:
 
         for master_post in master_posts:
             account_status = {}
+            account_matches = {}
             missing_in = []
             review_in = []
 
             for account, posts in account_posts.items():
-                # Find best match for this post in this account
                 best_result = None
+                best_candidate = None
 
                 for candidate in posts:
-                    # Get match result (always MatchResult)
                     result = self.matcher.match(master_post, candidate)
 
-                    # Keep track of best match by score
                     if best_result is None or result.score > best_result.score:
                         best_result = result
+                        best_candidate = candidate
 
-                # Determine status for this account
                 if best_result is None:
                     status = "missing"
+                    candidate_permalink = None
                 else:
-                    # MatchResult object
                     status = best_result.status.value
+                    candidate_permalink = best_candidate.permalink if status != "missing" else None
 
                 account_status[account] = status
+
+                account_matches[account] = AccountMatchDetail(
+                    status=best_result.status if best_result else MatchStatus.MISSING,
+                    score=best_result.score if best_result else 0.0,
+                    candidate_shortcode=best_candidate.shortcode if best_candidate and status != "missing" else None,
+                    candidate_permalink=candidate_permalink,
+                    visual_similarity=best_result.visual_similarity if best_result else None,
+                    caption_similarity=best_result.caption_similarity if best_result else 0.0,
+                    type_match=best_result.type_match if best_result else False,
+                    date_similarity=best_result.date_similarity if best_result else 0.0,
+                )
 
                 if status == "missing":
                     missing_in.append(account)
@@ -62,6 +73,7 @@ class AuditService:
             post_status = PostAuditStatus(
                 master_post=master_post,
                 account_status=account_status,
+                account_matches=account_matches,
                 missing_in=missing_in,
                 review_in=review_in,
             )

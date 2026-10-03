@@ -3,7 +3,7 @@ import pytest
 from datetime import datetime
 from pathlib import Path
 from openpyxl import load_workbook
-from app.domain.models import InstagramPost, PostType, AuditResult, PostAuditStatus
+from app.domain.models import InstagramPost, PostType, AuditResult, PostAuditStatus, AccountMatchDetail, MatchStatus
 from app.exporters.excel_exporter import ExcelExporter
 
 
@@ -44,18 +44,30 @@ def sample_audit_result():
         PostAuditStatus(
             master_post=posts[0],
             account_status={"account_a": "found", "account_b": "found"},
+            account_matches={
+                "account_a": AccountMatchDetail(MatchStatus.FOUND, 1.0, "POST001_A", "https://instagram.com/p/POST001_A/", 1.0, 1.0, True, 1.0),
+                "account_b": AccountMatchDetail(MatchStatus.FOUND, 1.0, "POST001_B", "https://instagram.com/p/POST001_B/", 1.0, 1.0, True, 1.0),
+            },
             missing_in=[],
             review_in=[],
         ),
         PostAuditStatus(
             master_post=posts[1],
             account_status={"account_a": "found", "account_b": "review"},
+            account_matches={
+                "account_a": AccountMatchDetail(MatchStatus.FOUND, 1.0, "POST002_A", "https://instagram.com/p/POST002_A/", 0.9, 0.95, True, 0.9),
+                "account_b": AccountMatchDetail(MatchStatus.REVIEW, 0.75, "POST002_B", "https://instagram.com/p/POST002_B/", 0.7, 0.75, True, 0.8),
+            },
             missing_in=[],
             review_in=["account_b"],
         ),
         PostAuditStatus(
             master_post=posts[2],
             account_status={"account_a": "missing", "account_b": "missing"},
+            account_matches={
+                "account_a": AccountMatchDetail(MatchStatus.MISSING, 0.3, None, None, 0.2, 0.3, False, 0.1),
+                "account_b": AccountMatchDetail(MatchStatus.MISSING, 0.4, None, None, 0.3, 0.4, False, 0.2),
+            },
             missing_in=["account_a", "account_b"],
             review_in=[],
         ),
@@ -91,7 +103,7 @@ def test_excel_has_all_sheets(sample_audit_result, tmp_path):
 
     wb = load_workbook(result_path)
     assert "1_ESCANEO" in wb.sheetnames
-    assert "2_FALTANTES" in wb.sheetnames
+    assert "2_PARRILLA" in wb.sheetnames
     assert "3_REVISAR" in wb.sheetnames
 
 
@@ -108,15 +120,15 @@ def test_escaneo_sheet_has_correct_rows(sample_audit_result, tmp_path):
 
 
 def test_faltantes_sheet_has_only_missing(sample_audit_result, tmp_path):
-    """Test that FALTANTES sheet has only posts with missing accounts"""
+    """Test that PARRILLA sheet has one row per missing account"""
     exporter = ExcelExporter()
     result_path = exporter.export(sample_audit_result, str(tmp_path))
 
     wb = load_workbook(result_path)
-    ws = wb["2_FALTANTES"]
+    ws = wb["2_PARRILLA"]
 
-    # Header + 1 post (POST003 has missing accounts)
-    assert ws.max_row == 2
+    # Header + 3 posts (one row per post in PARRILLA)
+    assert ws.max_row == 4
 
 
 def test_revisar_sheet_has_only_review(sample_audit_result, tmp_path):

@@ -1,5 +1,6 @@
 """Central configuration for Instagram accounts and scanning"""
 from dataclasses import dataclass, field
+from datetime import date
 from app.utils import normalize_instagram_username
 
 
@@ -12,9 +13,14 @@ class AccountConfig:
         "newbodyclubantienvejecimientoc",
         "newbodybaq",
     ])
+    account_labels: dict[str, str] = field(default_factory=lambda: {
+        "newbodycol": "Colombia",
+        "newbodyclubmedellin": "Medellín",
+        "newbodyclubantienvejecimientoc": "Antienvejecimiento",
+        "newbodybaq": "Barranquilla",
+    })
 
     def __post_init__(self):
-        # Normalize all usernames
         self.master_account = normalize_instagram_username(self.master_account)
         self.comparison_accounts = [
             normalize_instagram_username(acc) for acc in self.comparison_accounts
@@ -28,12 +34,18 @@ class AccountConfig:
 @dataclass
 class ScanConfig:
     """Configuration for scanning behavior"""
-    master_limit: int = 20
+    master_limit: int | None = 20
+    from_date: date | None = None
+    to_date: date | None = None
     regional_multiplier: float = 2.0
 
     @property
     def regional_limit(self) -> int:
         """Calculate regional limit based on master limit"""
+        if self.master_limit is None:
+            # Date mode: no artificial limit, will be filtered by actual date range
+            # Safety limit is handled in provider (MAX_DATE_SCROLLS)
+            return 1000  # High safety limit, not a filter
         return int(self.master_limit * self.regional_multiplier)
 
     # Media cache settings
