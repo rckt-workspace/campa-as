@@ -1,5 +1,7 @@
 """Media cache for Instagram thumbnails"""
 import logging
+import os
+import asyncio
 from pathlib import Path
 from typing import Optional, Callable
 from html import unescape
@@ -9,18 +11,27 @@ logger = logging.getLogger(__name__)
 
 
 class MediaCache:
-    """Cache for Instagram media thumbnails"""
+    """Cache for Instagram media thumbnails with async downloads and concurrency limiting"""
 
     def __init__(
         self,
         cache_dir: str = "data/cache",
         timeout: float = 10.0,
         media_fetcher: Optional[Callable] = None,
+        max_concurrent_downloads: int = None,
     ):
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.timeout = timeout
         self.media_fetcher = media_fetcher
+
+        # Concurrency limiting
+        if max_concurrent_downloads is None:
+            max_concurrent_downloads = int(
+                os.getenv("MEDIA_DOWNLOAD_CONCURRENCY", "6")
+            )
+        self.semaphore = asyncio.Semaphore(max_concurrent_downloads)
+        self.client: Optional[httpx.AsyncClient] = None
 
     def _get_cache_path(self, username: str, shortcode: str) -> Path:
         """Generate consistent cache filename for a post"""
@@ -57,6 +68,17 @@ class MediaCache:
             logger.warning(f"Failed to download thumbnail for {shortcode}: {e}")
             return None
 
+    async def _ensure_client(self):
+        """Ensure AsyncClient is initialized"""
+        if self.client is None:
+            self.client = httpx.AsyncClient(timeout=self.timeout)
+
+    async def close(self):
+        """Close the AsyncClient"""
+        if self.client:
+            await self.client.aclose()
+            self.client = None
+
     async def _download_thumbnail(
         self,
         url: str,
@@ -68,9 +90,10 @@ class MediaCache:
         # Normalize URL: decode HTML entities (&amp; → &)
         url = unescape(url)
 
-        try:
-            with httpx.Client(timeout=self.timeout) as client:
-                response = client.get(
+        async with self.semaphore:
+            try:
+                await self._ensure_client()
+                response = await self.client.get(
                     url,
                     headers={
                         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
@@ -109,22 +132,22 @@ class MediaCache:
                 logger.warning(f"HTTP {response.status_code} for @{username}/{shortcode}")
                 return None
 
-        except httpx.TimeoutException:
-            logger.warning(f"Timeout downloading @{username}/{shortcode}")
-            # Try media_fetcher fallback on timeout
-            if self.media_fetcher:
-                try:
-                    content = await self.media_fetcher(url)
-                    if content:
-                        destination.write_bytes(content)
-                        logger.debug(f"Downloaded via fallback after timeout: @{username}/{shortcode}")
-                        return destination
-                except Exception as e:
-                    logger.warning(f"Fallback also failed for @{username}/{shortcode}: {e}")
-            return None
-        except Exception as e:
-            logger.warning(f"Error downloading @{username}/{shortcode}: {e}")
-            return None
+            except httpx.TimeoutException:
+                logger.warning(f"Timeout downloading @{username}/{shortcode}")
+                # Try media_fetcher fallback on timeout
+                if self.media_fetcher:
+                    try:
+                        content = await self.media_fetcher(url)
+                        if content:
+                            destination.write_bytes(content)
+                            logger.debug(f"Downloaded via fallback after timeout: @{username}/{shortcode}")
+                            return destination
+                    except Exception as e:
+                        logger.warning(f"Fallback also failed for @{username}/{shortcode}: {e}")
+                return None
+            except Exception as e:
+                logger.warning(f"Error downloading @{username}/{shortcode}: {e}")
+                return None
 
     def clear_cache(self) -> int:
         """Clear all cached files. Returns count of deleted files."""

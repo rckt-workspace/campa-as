@@ -249,3 +249,28 @@ class ManualAuditResponse(BaseModel):
         default_factory=dict,
         description="Per-account extraction stats: links_received, links_valid, posts_extracted, links_failed"
     )
+
+
+class ScanStartResponse(BaseModel):
+    """Response when scan is initiated (HTTP 202)"""
+    scan_id: str
+    status: Literal["queued"] = "queued"
+
+
+class ScanJobResponse(BaseModel):
+    """Response for polling scan status"""
+    scan_id: str
+    status: Literal[
+        "queued",
+        "fetching_master",
+        "fetching_targets",
+        "downloading_media",
+        "matching",
+        "exporting",
+        "completed",
+        "failed"
+    ]
+    progress: int = Field(ge=0, le=100, description="Progress percentage")
+    message: str = Field(default="", description="Current stage message")
+    result: ScanResponse | None = Field(default=None, description="Final result when status=completed")
+    error: str | None = Field(default=None, description="Error message when status=failed")

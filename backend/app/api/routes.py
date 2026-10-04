@@ -5,7 +5,17 @@ from uuid import uuid4
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from starlette.responses import FileResponse
-from app.api.schemas import HealthResponse, ScanRequest, ScanResponse, ErrorResponse, PostResultResponse, AccountMatchResponse
+from app.api.schemas import (
+    HealthResponse,
+    ScanRequest,
+    ScanResponse,
+    ScanStartResponse,
+    ScanJobResponse,
+    ErrorResponse,
+    PostResultResponse,
+    AccountMatchResponse,
+)
+from app.api.job_manager import ScanJobManager
 from app.config import AccountConfig, ScanConfig
 from app.providers.factory import create_instagram_provider
 from app.providers.meta_instagram import MetaInstagramProvider
@@ -21,6 +31,7 @@ router = APIRouter(prefix="/api", tags=["scans"])
 _scan_results: dict[str, Path] = {}
 _scan_lock = asyncio.Lock()
 _active_scan = False
+_job_manager = ScanJobManager()
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -130,21 +141,21 @@ async def meta_diagnostic():
         }
 
 
-@router.post("/scans", response_model=ScanResponse, status_code=200)
-async def run_scan(request: ScanRequest):
-    """Run a content audit scan"""
+async def _progress_callback(stage: str, progress: int, message: str):
+    """Callback for updating scan job progress"""
+    # Job manager is updated from _run_scan_background
+    pass
+
+
+async def _run_scan_background(scan_id: str, request: ScanRequest):
+    """Background task that runs the actual scan"""
     global _active_scan
-
-    async with _scan_lock:
-        if _active_scan:
-            raise HTTPException(
-                status_code=409,
-                detail="Ya hay una auditoría en ejecución. Espera a que termine.",
-            )
-        _active_scan = True
-
     provider = None
+
     try:
+        # Update to fetching_master
+        await _job_manager.update_job_status(scan_id, "fetching_master", 10, f"Consultando @{request.master_username}")
+
         headless = os.getenv("BROWSER_HEADLESS", "true").lower() == "true"
         provider = create_instagram_provider(headless=headless)
 
@@ -176,10 +187,19 @@ async def run_scan(request: ScanRequest):
             to_str = request.to_date.strftime("%d/%m/%Y")
             scan_period = f"{from_str} — {to_str}"
 
+        # Update to fetching_targets
+        await _job_manager.update_job_status(
+            scan_id,
+            "fetching_targets",
+            20,
+            f"Consultando {len(account_labels) - 1} cuentas regionales",
+        )
+
         service = ScanService(
             provider=provider,
             account_config=account_config,
             scan_config=scan_config,
+            progress_callback=lambda s, p, m: _job_manager.update_job_status(scan_id, s, p, m),
         )
 
         export_dir = os.getenv("EXPORT_DIR", "data/exports")
@@ -212,10 +232,9 @@ async def run_scan(request: ScanRequest):
             }
             posts_data.append(post_result)
 
-        scan_id = str(uuid4())
         _scan_results[scan_id] = Path(result.excel_path)
 
-        return ScanResponse(
+        scan_response = ScanResponse(
             scan_id=scan_id,
             status="completed",
             master_account=result.master_account,
@@ -234,18 +253,19 @@ async def run_scan(request: ScanRequest):
             coverage_by_account=result.coverage_by_account,
         )
 
+        await _job_manager.complete_job(scan_id, scan_response)
+        logger.info(f"Scan {scan_id} completed successfully")
+
     except InstagramProviderException as e:
-        logger.warning(f"Instagram provider error: {e}")
-        raise HTTPException(
-            status_code=400,
-            detail="No fue posible acceder públicamente a una de las cuentas de Instagram.",
-        )
+        error_msg = "No fue posible acceder públicamente a una de las cuentas de Instagram."
+        logger.warning(f"Instagram provider error in scan {scan_id}: {e}")
+        await _job_manager.fail_job(scan_id, error_msg)
+
     except Exception as e:
-        logger.error(f"Scan error: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail="No fue posible completar la auditoría.",
-        )
+        error_msg = f"Error durante la auditoría: {str(e)[:100]}"
+        logger.exception(f"Scan {scan_id} failed with exception: {e}")
+        await _job_manager.fail_job(scan_id, error_msg)
+
     finally:
         async with _scan_lock:
             _active_scan = False
@@ -254,7 +274,51 @@ async def run_scan(request: ScanRequest):
             try:
                 await provider.close()
             except Exception as e:
-                logger.warning(f"Error closing provider: {e}")
+                logger.warning(f"Error closing provider after scan {scan_id}: {e}")
+
+
+@router.post("/scans", response_model=ScanStartResponse, status_code=202)
+async def run_scan(request: ScanRequest):
+    """Initiate a content audit scan (async, returns immediately)"""
+    global _active_scan
+
+    # Check if another scan is active and mark this one as starting
+    async with _scan_lock:
+        if _active_scan:
+            raise HTTPException(
+                status_code=409,
+                detail="Ya hay una auditoría en ejecución. Espera a que termine.",
+            )
+        _active_scan = True
+
+    # Create scan ID and job before launching task
+    scan_id = str(uuid4())
+    await _job_manager.create_job(scan_id)
+
+    # Launch background task
+    task = asyncio.create_task(_run_scan_background(scan_id, request))
+    _job_manager.add_task(task)
+
+    logger.info(f"Initiated scan {scan_id}")
+    return ScanStartResponse(scan_id=scan_id, status="queued")
+
+
+@router.get("/scans/{scan_id}", response_model=ScanJobResponse)
+async def get_scan_status(scan_id: str):
+    """Get the status and progress of a scan"""
+    job = await _job_manager.get_job(scan_id)
+
+    if not job:
+        raise HTTPException(status_code=404, detail="Scan not found")
+
+    return ScanJobResponse(
+        scan_id=job.scan_id,
+        status=job.status,
+        progress=job.progress,
+        message=job.message,
+        result=job.result,
+        error=job.error,
+    )
 
 
 @router.get("/scans/{scan_id}/export")

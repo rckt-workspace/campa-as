@@ -1,7 +1,9 @@
 """Service for orchestrating content scans across Instagram accounts"""
 import logging
+import asyncio
 from datetime import datetime, date
 from dataclasses import dataclass
+from typing import Optional, Callable, Awaitable
 
 from app.config import AccountConfig, ScanConfig
 from app.domain.models import InstagramPost, AuditResult, AccountScanProgress
@@ -67,16 +69,26 @@ class ScanService:
         provider: InstagramProvider = None,
         account_config: AccountConfig = None,
         scan_config: ScanConfig = None,
+        progress_callback: Optional[Callable[[str, int, str], Awaitable[None]]] = None,
     ):
         self.provider = provider
         self.account_config = account_config or AccountConfig()
         self.scan_config = scan_config or ScanConfig()
+        self.progress_callback = progress_callback
         self.media_cache = MediaCache(
             cache_dir=self.scan_config.media_cache_dir,
             timeout=self.scan_config.media_timeout,
         )
         self.audit_service = AuditService(matcher=PerceptualContentMatcher())
         self.excel_exporter = ExcelExporter()
+
+    async def _report_progress(self, stage: str, progress: int, message: str):
+        """Report progress via callback if available"""
+        if self.progress_callback:
+            try:
+                await self.progress_callback(stage, progress, message)
+            except Exception as e:
+                logger.warning(f"Error in progress callback: {e}")
 
     async def scan(self, output_dir: str = "data/exports") -> ScanResult:
         """
@@ -156,13 +168,15 @@ class ScanService:
                     warnings.append(f"{self.account_config.master_account}: {master_metadata.warning}")
 
         logger.info(f"Fetched {len(master_posts)} master posts")
+        await self._report_progress("downloading_media", 40, "Descargando recursos visuales del maestro...")
 
         # Prepare master posts with local thumbnails
         master_posts = await self._prepare_posts(master_posts)
 
         # Fetch regional posts
         account_posts = {}
-        for account in self.account_config.comparison_accounts:
+        total_regional = len(self.account_config.comparison_accounts)
+        for idx, account in enumerate(self.account_config.comparison_accounts):
             logger.info(f"Fetching posts from regional account: {account}")
             if is_date_mode:
                 if self.provider.supports_native_pagination:
@@ -226,20 +240,30 @@ class ScanService:
             posts = await self._prepare_posts(posts)
             account_posts[account] = posts
 
+            # Update progress
+            progress = 40 + int((idx + 1) / total_regional * 20)
+            await self._report_progress("downloading_media", progress, f"Descargando recursos de {account}...")
+
         # Run audit
         logger.info("Running content audit comparison")
-        audit_result = self.audit_service.audit_accounts(
-            master_posts=master_posts,
-            account_posts=account_posts,
-            master_account=self.account_config.master_account,
+        await self._report_progress("matching", 60, "Comparando contenido...")
+
+        audit_result = await asyncio.to_thread(
+            self.audit_service.audit_accounts,
+            master_posts,
+            account_posts,
+            self.account_config.master_account,
         )
 
         # Export to Excel
         logger.info("Generating Excel report")
-        excel_path = self.excel_exporter.export(
+        await self._report_progress("exporting", 90, "Generando Excel...")
+
+        excel_path = await asyncio.to_thread(
+            self.excel_exporter.export,
             audit_result,
             output_dir,
-            account_labels=self.account_config.account_labels,
+            self.account_config.account_labels,
         )
 
         completed_at = datetime.now()

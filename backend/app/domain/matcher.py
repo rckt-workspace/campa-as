@@ -49,6 +49,8 @@ class PerceptualContentMatcher(ContentMatcher):
 
     def __init__(self, config: MatcherConfig = None):
         self.config = config or MatcherConfig()
+        self._hash_cache: dict[str, object | None] = {}  # path -> phash | None
+
         try:
             import imagehash
             from PIL import Image
@@ -132,6 +134,21 @@ class PerceptualContentMatcher(ContentMatcher):
             date_similarity=date_sim,
         )
 
+    def _get_phash(self, image_path: str) -> object | None:
+        """Get perceptual hash for image, using cache to avoid recalculation"""
+        if image_path in self._hash_cache:
+            return self._hash_cache[image_path]
+
+        try:
+            # Load image and compute hash
+            with self.Image.open(image_path) as img:
+                phash = self.imagehash.phash(img)
+                self._hash_cache[image_path] = phash
+                return phash
+        except Exception:
+            self._hash_cache[image_path] = None
+            return None
+
     def _compute_visual_similarity(
         self,
         url_a: str,
@@ -142,16 +159,12 @@ class PerceptualContentMatcher(ContentMatcher):
             return None
 
         try:
-            # For testing, support local file paths or URLs
-            img_a = self._load_image(url_a)
-            img_b = self._load_image(url_b)
+            # Get hashes (cached if already computed)
+            hash_a = self._get_phash(url_a)
+            hash_b = self._get_phash(url_b)
 
-            if not img_a or not img_b:
+            if hash_a is None or hash_b is None:
                 return None
-
-            # Compute perceptual hashes
-            hash_a = self.imagehash.phash(img_a)
-            hash_b = self.imagehash.phash(img_b)
 
             # Convert Hamming distance to similarity (0-1)
             # Max distance is 64 for 8x8 hash
