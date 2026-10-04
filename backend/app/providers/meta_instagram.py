@@ -20,9 +20,9 @@ class MetaInstagramProvider(InstagramProvider):
         self,
         access_token: str = None,
         ig_user_id: str = None,
-        api_version: str = "v26.0",
-        page_size: int = 50,
-        max_pages: int = 100,
+        api_version: str = None,
+        page_size: int = None,
+        max_pages: int = None,
     ):
         """
         Initialize Meta Instagram provider.
@@ -39,9 +39,9 @@ class MetaInstagramProvider(InstagramProvider):
         """
         self.access_token = access_token or os.getenv("META_ACCESS_TOKEN")
         self.ig_user_id = ig_user_id or os.getenv("META_IG_USER_ID")
-        self.api_version = api_version or os.getenv("META_GRAPH_API_VERSION", "v26.0")
-        self.page_size = page_size or int(os.getenv("META_PAGE_SIZE", "50"))
-        self.max_pages = max_pages or int(os.getenv("META_MAX_PAGES", "100"))
+        self.api_version = api_version or os.getenv("META_GRAPH_API_VERSION") or "v26.0"
+        self.page_size = page_size or int(os.getenv("META_PAGE_SIZE") or "50")
+        self.max_pages = max_pages or int(os.getenv("META_MAX_PAGES") or "100")
 
         if not self.access_token or not self.ig_user_id:
             raise InstagramProviderException(

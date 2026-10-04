@@ -8,6 +8,7 @@ from starlette.responses import FileResponse
 from app.api.schemas import HealthResponse, ScanRequest, ScanResponse, ErrorResponse, PostResultResponse, AccountMatchResponse
 from app.config import AccountConfig, ScanConfig
 from app.providers.factory import create_instagram_provider
+from app.providers.meta_instagram import MetaInstagramProvider
 from app.services.scan_service import ScanService
 from app.domain.exceptions import InstagramProviderException
 from app.utils import clean_caption
@@ -26,6 +27,107 @@ _active_scan = False
 async def health_check():
     """Health check endpoint"""
     return HealthResponse(status="ok", service="newbody-content-auditor")
+
+
+@router.get("/meta/diagnostic")
+async def meta_diagnostic():
+    """Diagnostic endpoint for Meta Graph API configuration"""
+    try:
+        # Check if Meta is configured
+        configured = (
+            bool(os.getenv("META_ACCESS_TOKEN"))
+            and bool(os.getenv("META_IG_USER_ID"))
+        )
+        provider_type = os.getenv("INSTAGRAM_PROVIDER", "auto").lower()
+
+        if not configured:
+            return {
+                "configured": False,
+                "provider": provider_type,
+                "message": "Meta Graph API not configured (META_ACCESS_TOKEN and/or META_IG_USER_ID missing)",
+            }
+
+        # Instantiate Meta provider
+        try:
+            provider = MetaInstagramProvider()
+        except InstagramProviderException as e:
+            return {
+                "configured": False,
+                "provider": provider_type,
+                "message": f"Meta provider initialization failed: {str(e)[:100]}",
+            }
+
+        # Test connectivity with newbodycol
+        try:
+            data = await provider._fetch_business_discovery_page("newbodycol", cursor=None)
+
+            await provider.close()
+
+            # Check for API errors
+            if "error" in data:
+                error = data["error"]
+                return {
+                    "configured": True,
+                    "provider": provider_type,
+                    "api_reachable": False,
+                    "source_ig_user_id_present": True,
+                    "target_username": "newbodycol",
+                    "target_accessible": False,
+                    "error": f"API error: {error.get('message', 'Unknown error')}",
+                }
+
+            # Extract business_discovery
+            bd = data.get("business_discovery", {})
+            if not bd:
+                return {
+                    "configured": True,
+                    "provider": provider_type,
+                    "api_reachable": True,
+                    "source_ig_user_id_present": True,
+                    "target_username": "newbodycol",
+                    "target_accessible": False,
+                    "error": "Target not found or not accessible",
+                }
+
+            # Extract media
+            media_data = bd.get("media", {})
+            media_list = media_data.get("data", [])
+            media_count = len(media_list)
+
+            # Prepare sample posts (max 3)
+            sample_posts = []
+            for post in media_list[:3]:
+                sample_posts.append({
+                    "permalink": post.get("permalink", ""),
+                    "timestamp": post.get("timestamp", ""),
+                    "media_type": post.get("media_type", ""),
+                })
+
+            return {
+                "configured": True,
+                "provider": provider_type,
+                "api_reachable": True,
+                "source_ig_user_id_present": True,
+                "target_username": bd.get("username", ""),
+                "target_accessible": True,
+                "media_count": media_count,
+                "sample_posts": sample_posts,
+            }
+
+        except Exception as e:
+            await provider.close()
+            return {
+                "configured": True,
+                "provider": provider_type,
+                "api_reachable": False,
+                "error": f"Failed to fetch business discovery: {str(e)[:100]}",
+            }
+
+    except Exception as e:
+        logger.error(f"Diagnostic error: {e}")
+        return {
+            "error": f"Diagnostic failed: {str(e)[:100]}",
+        }
 
 
 @router.post("/scans", response_model=ScanResponse, status_code=200)
