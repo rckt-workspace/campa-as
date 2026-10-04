@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException
 from starlette.responses import FileResponse
 from app.api.schemas import HealthResponse, ScanRequest, ScanResponse, ErrorResponse, PostResultResponse, AccountMatchResponse
 from app.config import AccountConfig, ScanConfig
-from app.providers.browser_instagram import BrowserInstagramProvider
+from app.providers.factory import create_instagram_provider
 from app.services.scan_service import ScanService
 from app.domain.exceptions import InstagramProviderException
 from app.utils import clean_caption
@@ -44,7 +44,7 @@ async def run_scan(request: ScanRequest):
     provider = None
     try:
         headless = os.getenv("BROWSER_HEADLESS", "true").lower() == "true"
-        provider = BrowserInstagramProvider(headless=headless)
+        provider = create_instagram_provider(headless=headless)
 
         account_labels = {request.master_username: request.master_label}
         for target in request.targets:
