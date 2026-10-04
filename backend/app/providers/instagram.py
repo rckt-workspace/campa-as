@@ -20,14 +20,29 @@ logger = logging.getLogger(__name__)
 class InstagramProvider(ABC):
     """Abstract interface for Instagram data access"""
 
+    @property
+    def supports_reliable_history(self) -> bool:
+        """Whether this provider can reliably fetch complete historical data"""
+        return False
+
     @abstractmethod
-    async def get_posts(self, account: str, limit: int = 5) -> list[InstagramPost]:
+    async def get_posts(
+        self,
+        account: str,
+        limit: int = None,
+        from_date = None,
+        to_date = None,
+    ) -> list[InstagramPost]:
         """Fetch posts from an Instagram account"""
         pass
 
     @abstractmethod
     async def get_post(self, post_id: str) -> Optional[InstagramPost]:
         """Fetch a single post by ID"""
+        pass
+
+    async def close(self):
+        """Clean up resources (called at end of scan)"""
         pass
 
 

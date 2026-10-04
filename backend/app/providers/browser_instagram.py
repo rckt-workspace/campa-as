@@ -12,12 +12,13 @@ from app.domain.exceptions import (
     ProfileNotFoundException,
     PrivateProfileException,
 )
+from app.providers.instagram import InstagramProvider
 from app.utils import to_bogota_time
 
 logger = logging.getLogger(__name__)
 
 
-class BrowserInstagramProvider:
+class BrowserInstagramProvider(InstagramProvider):
     """Instagram provider using Playwright for public content access"""
 
     def __init__(self, headless: bool = True, viewport: dict = None):

@@ -12,10 +12,13 @@ from app.api.schemas import (
 )
 from app.config import AccountConfig, ScanConfig
 from app.providers.browser_instagram import BrowserInstagramProvider
+from app.providers.factory import create_instagram_provider
+from app.providers.meta_instagram import MetaInstagramProvider
 from app.services.scan_service import ScanService
 from app.services.manual_audit_service import ManualAuditService
 from app.domain.exceptions import InstagramProviderException
 from app.utils import clean_caption
+from fastapi import Query
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +52,7 @@ async def run_scan(request: ScanRequest):
     provider = None
     try:
         headless = os.getenv("BROWSER_HEADLESS", "true").lower() == "true"
-        provider = BrowserInstagramProvider(headless=headless)
+        provider = create_instagram_provider(headless=headless)
 
         account_labels = {request.master_username: request.master_label}
         for target in request.targets:
@@ -397,3 +400,74 @@ async def run_manual_audit(request: ManualAuditRequest):
                 await provider.close()
             except Exception as e:
                 logger.warning(f"Error closing provider: {e}")
+
+
+@router.get("/meta/diagnostic", status_code=200)
+async def meta_diagnostic(username: str = Query(None, description="Optional: test username")):
+    """Diagnostic endpoint for Meta Instagram API configuration"""
+    try:
+        # Check if configured
+        provider = create_instagram_provider()
+
+        if not isinstance(provider, MetaInstagramProvider):
+            return {
+                "configured": False,
+                "provider": "browser",
+                "message": "Meta provider not configured"
+            }
+
+        result = {
+            "configured": True,
+            "provider": "meta",
+            "api_reachable": False,
+            "source_ig_user_id_present": bool(provider.ig_user_id),
+        }
+
+        # Test if we can reach API
+        try:
+            await provider._ensure_client()
+            response = await provider.client.get(
+                f"{provider.base_url}/{provider.ig_user_id}?access_token={provider.access_token}&fields=id"
+            )
+            result["api_reachable"] = response.status_code == 200
+        except Exception as e:
+            logger.warning(f"Meta API test failed: {e}")
+            result["api_reachable"] = False
+
+        # Test target username if provided
+        if username:
+            try:
+                target = await provider._discover_account(username)
+                result["target_username"] = username
+                result["target_accessible"] = True
+                result["target_id"] = target.get("id")
+
+                # Fetch sample posts
+                media_data = await provider._fetch_media_page(target["id"])
+                media_list = media_data.get("data", [])[:3]
+                result["sample_posts"] = [
+                    {
+                        "permalink": m.get("permalink"),
+                        "timestamp": m.get("timestamp"),
+                        "media_type": m.get("media_type"),
+                    }
+                    for m in media_list
+                ]
+
+                if media_data.get("data"):
+                    result["media_count"] = len(media_data.get("data", []))
+            except Exception as e:
+                logger.warning(f"Target test failed: {e}")
+                result["target_username"] = username
+                result["target_accessible"] = False
+                result["error"] = str(e)
+
+        await provider.close()
+        return result
+
+    except Exception as e:
+        logger.error(f"Diagnostic error: {e}")
+        return {
+            "configured": False,
+            "error": str(e),
+        }
