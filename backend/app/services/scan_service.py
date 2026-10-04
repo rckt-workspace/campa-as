@@ -91,33 +91,36 @@ class ScanService:
         warnings = []
         coverage_by_account = {}
         is_date_mode = self.scan_config.from_date is not None
-        supports_reliable_history = self.provider.supports_reliable_history
 
         # Fetch master posts
         logger.info(f"Fetching posts from master account: {self.account_config.master_account}")
         if is_date_mode:
-            # Date mode: check if provider has reliable history
-            if supports_reliable_history:
-                # Meta provider: direct call without batch retry
-                logger.info("Using reliable history provider (no batch retry)")
+            if self.provider.supports_native_pagination:
+                # Provider has native pagination (Meta): single call with date range
+                logger.info("Provider supports native pagination; using direct date range fetch")
                 master_posts = await self.provider.get_posts(
                     self.account_config.master_account,
                     limit=None,
                     from_date=self.scan_config.from_date,
                     to_date=self.scan_config.to_date,
                 )
-                coverage_by_account[self.account_config.master_account] = {
-                    "label": self.account_config.account_labels.get(self.account_config.master_account, self.account_config.master_account),
-                    "provider": "meta",
-                    "posts_found": len(master_posts),
-                    "min_date_found": min((p.published_at.date() for p in master_posts), default=None),
-                    "max_date_found": max((p.published_at.date() for p in master_posts), default=None),
-                    "completed": True,
-                    "pages_fetched": 1,  # Meta always completes in one logical fetch
-                }
+                # Get metadata
+                if hasattr(self.provider, 'fetch_metadata_by_account'):
+                    master_metadata = self.provider.fetch_metadata_by_account.get(
+                        self.account_config.master_account
+                    )
+                    if master_metadata:
+                        coverage_by_account[self.account_config.master_account] = {
+                            "label": self.account_config.account_labels.get(self.account_config.master_account, self.account_config.master_account),
+                            "discovered_unique_posts": master_metadata.discovered_links,
+                            "completed": master_metadata.completed,
+                            "stop_reason": master_metadata.stop_reason,
+                            "warning": master_metadata.warning,
+                        }
+                        if master_metadata.warning:
+                            warnings.append(f"{self.account_config.master_account}: {master_metadata.warning}")
             else:
-                # Browser provider: use batch retry logic
-                logger.info("Using browser provider with batch retry")
+                # Browser provider: use batch retry
                 master_posts, master_progress = await self._batch_fetch_posts_date_mode(
                     self.account_config.master_account,
                     self.scan_config.from_date,
@@ -137,7 +140,7 @@ class ScanService:
                     "stop_reason": master_progress.stop_reason,
                 }
         else:
-            # Count mode: simple fetch
+            # Count mode: simple fetch (all providers handle same way)
             master_posts = await self.provider.get_posts(
                 self.account_config.master_account,
                 limit=self.scan_config.master_limit,
@@ -162,28 +165,29 @@ class ScanService:
         for account in self.account_config.comparison_accounts:
             logger.info(f"Fetching posts from regional account: {account}")
             if is_date_mode:
-                # Date mode: check if provider has reliable history
-                if supports_reliable_history:
-                    # Meta provider: direct call without batch retry
-                    logger.info(f"Using reliable history provider for {account} (no batch retry)")
+                if self.provider.supports_native_pagination:
+                    # Provider has native pagination (Meta): single call with date range
                     posts = await self.provider.get_posts(
                         account,
                         limit=None,
                         from_date=self.scan_config.from_date,
                         to_date=self.scan_config.to_date,
                     )
-                    coverage_by_account[account] = {
-                        "label": self.account_config.account_labels.get(account, account),
-                        "provider": "meta",
-                        "posts_found": len(posts),
-                        "min_date_found": min((p.published_at.date() for p in posts), default=None),
-                        "max_date_found": max((p.published_at.date() for p in posts), default=None),
-                        "completed": True,
-                        "pages_fetched": 1,  # Meta always completes in one logical fetch
-                    }
+                    # Get metadata
+                    if hasattr(self.provider, 'fetch_metadata_by_account'):
+                        regional_metadata = self.provider.fetch_metadata_by_account.get(account)
+                        if regional_metadata:
+                            coverage_by_account[account] = {
+                                "label": self.account_config.account_labels.get(account, account),
+                                "discovered_unique_posts": regional_metadata.discovered_links,
+                                "completed": regional_metadata.completed,
+                                "stop_reason": regional_metadata.stop_reason,
+                                "warning": regional_metadata.warning,
+                            }
+                            if regional_metadata.warning:
+                                warnings.append(f"{account}: {regional_metadata.warning}")
                 else:
-                    # Browser provider: use batch retry logic
-                    logger.info(f"Using browser provider for {account} with batch retry")
+                    # Browser provider: use batch retry
                     posts, regional_progress = await self._batch_fetch_posts_date_mode(
                         account,
                         self.scan_config.from_date,
@@ -203,7 +207,7 @@ class ScanService:
                         "stop_reason": regional_progress.stop_reason,
                     }
             else:
-                # Count mode: simple fetch
+                # Count mode: simple fetch (all providers handle same way)
                 posts = await self.provider.get_posts(
                     account,
                     limit=self.scan_config.regional_limit,
@@ -325,20 +329,6 @@ class ScanService:
                     from_date=from_date,
                     to_date=to_date,
                 )
-
-                # Short-circuit: if first batch is empty, don't retry
-                if batch_index == 0 and len(batch_posts) == 0:
-                    logger.warning(
-                        f"@{account} first batch returned zero posts. "
-                        "Skipping further retry attempts."
-                    )
-                    progress.batches_attempted = 1
-                    progress.completed = False
-                    progress.stop_reason = "zero_posts_initial"
-                    progress.warnings.append(
-                        "No fue posible descubrir publicaciones públicas desde este entorno."
-                    )
-                    break
 
                 # Identify new posts by shortcode
                 new_posts = [

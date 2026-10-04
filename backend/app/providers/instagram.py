@@ -21,15 +21,15 @@ class InstagramProvider(ABC):
     """Abstract interface for Instagram data access"""
 
     @property
-    def supports_reliable_history(self) -> bool:
-        """Whether this provider can reliably fetch complete historical data"""
+    def supports_native_pagination(self) -> bool:
+        """Whether provider can reliably handle pagination/date filtering internally"""
         return False
 
     @abstractmethod
     async def get_posts(
         self,
         account: str,
-        limit: int = None,
+        limit: int | None = None,
         from_date = None,
         to_date = None,
     ) -> list[InstagramPost]:
